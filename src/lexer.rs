@@ -2,23 +2,9 @@ use std::{collections::HashMap, iter::Peekable};
 use crate::token::{Token, TokenType};
 
 pub struct Lexer{
-    keywords: HashMap<String, TokenType>,
 }
-impl Lexer {
-    #[allow(dead_code)]
-    pub fn new() -> Self {
-        let keywords: HashMap<String, TokenType> = HashMap::new();
-        Self {
-            keywords,
-        }
-    }
-    pub fn new_keywords(keywords: HashMap<String, TokenType>) -> Self {
-        Self {
-        keywords,
-        }
-    }
-    
-    pub fn get_next_token<I>(&self, iterator: &mut Peekable<I>) -> Option<Token> where I: Iterator<Item = Result<char,utf8_read::Error>> {
+impl Lexer {    
+    pub fn get_next_token<I>(iterator: &mut Peekable<I>, keywords: &HashMap<String, TokenType>) -> Option<Token> where I: Iterator<Item = Result<char,utf8_read::Error>> {
         loop {
             let ch = match iterator.next() {
                 Some(Ok(value)) => value,
@@ -36,7 +22,16 @@ impl Lexer {
 
             // Handle operators
             match ch {
-                '^' | '%' | '+' | '-' | '*' | ',' | '.' => return Some(Token::new(TokenType::Operator, ch.to_string())),
+                '^' | '%' | '*' | ',' | '.' => return Some(Token::new(TokenType::Operator, ch.to_string())),
+                '+' | '-'  =>{
+                    if ch == p {
+                        let mut a = ch.to_string();
+                        a.push(ch);
+                        iterator.next();
+                        return Some(Token::new(TokenType::UnOperator, a))
+                    }
+                    return Some(Token::new(TokenType::Operator, ch.to_string()))
+                }
                 '(' => return Some(Token::new(TokenType::LParen,String::new())),
                 ')' => return Some(Token::new(TokenType::RParen,String::new())),
                 '{' => return Some(Token::new(TokenType::LBrace,String::new())),
@@ -45,7 +40,16 @@ impl Lexer {
                 ']' => return Some(Token::new(TokenType::RSquareBrace,String::new())),
                 ';' => return Some(Token::new(TokenType::Semicolon,String::new())),
                 ':' => return Some(Token::new(TokenType::Colon,String::new())),
-                '!' | '~' => return Some(Token::new(TokenType::UnOperator,'!'.to_string())),
+                '~' => return Some(Token::new(TokenType::UnOperator,'~'.to_string())),
+                '!' => {
+                    if p == '='{
+                        let mut a = ch.to_string();
+                        a.push(p);
+                        iterator.next();
+                        return Some(Token::new(TokenType::Operator, a))
+                    }
+                    return Some(Token::new(TokenType::UnOperator,'!'.to_string()))
+                }
                 '=' => {
                 if p == '=' || p == '>'{
                     let mut temp = ch.to_string();
@@ -93,34 +97,33 @@ impl Lexer {
                     return Some(Token::new(TokenType::Operator, ch.to_string()));
                 }
                 }
-                '#' => return Some(self.parse_name('#', iterator)),
+                '#' => return Some(Lexer::parse_name('#', iterator, keywords)),
                 '"' => return Some(Lexer::parse_string(iterator)),
                 '\'' =>{
-                let mut buff = String::new();
-                while let Some(Ok(x)) = iterator.next() {
-                    if x == '\''{
-                        break;
+                    let mut buff = String::new();
+                    while let Some(Ok(x)) = iterator.next() {
+                        if x == '\''{
+                            break;
+                        }
+                        buff.push(x);
                     }
-                    buff.push(x);
-                }
-                if buff.len() == 1{
-                    return Some(Token::new(TokenType::Char, buff));
-                }
-                if buff.starts_with('\\') && buff.len() == 2{
-                    let c = buff.pop().unwrap();
-                    match c {
-                        'n' => return Some(Token::new(TokenType::Char, "\n".to_string())),
-                        _ => panic!("Wrong escape sequence!"),
+                    if buff.len() == 1{
+                        return Some(Token::new(TokenType::Number, format!("{}",buff.chars().nth(0).unwrap() as u8)));
                     }
-                }
-                println!()
+                    if buff.starts_with('\\') && buff.len() == 2{
+                        let c = buff.pop().unwrap();
+                        match c {
+                            'n' => return Some(Token::new(TokenType::Number, 10.to_string())),
+                            _ => panic!("Wrong escape sequence!"),
+                        }
+                    }
                 }
                 _ => {
                     // Handle numbers and identifiers
                     if ch.is_digit(10) {
                         return Some(Lexer::parse_number(ch, iterator));
                     } else if ch.is_ascii_alphabetic() {
-                        return Some(self.parse_name(ch, iterator));
+                        return Some(Lexer::parse_name(ch, iterator, keywords));
                     } else {
                         println!("Error while lexing: {} | {} unexpected", ch, ch as u64);
                         return None;
@@ -131,11 +134,10 @@ impl Lexer {
     }
 
     fn parse_number<I>(first_digit: char, iterator: &mut Peekable<I>) -> Token  where I: Iterator<Item = Result<char, utf8_read::Error>>{
-        let mut buff = String::new();
         let mut digit = first_digit;
         let mut radix = 10;
         match iterator.peek() {
-            None => return Token::new(TokenType::Number, buff),
+            None => return Token::new(TokenType::Number, 0.to_string()),
             Some(Ok(d)) =>{
                 if *d == 'b'{
                     radix = 1;
@@ -146,6 +148,7 @@ impl Lexer {
             }
             _ => {}
         }
+        let mut buff = String::new();
         loop {
             buff.push(digit);
             
@@ -164,7 +167,7 @@ impl Lexer {
         // If loop exits without returning, return a number token
         Token::new(TokenType::Number, buff)
     }    
-    fn parse_name<I>(&self, first_char: char, iterator: &mut Peekable<I>) -> Token where I: Iterator<Item = Result<char, utf8_read::Error>>,{
+    fn parse_name<I>(first_char: char, iterator: &mut Peekable<I>, keywords: &HashMap<String, TokenType>) -> Token where I: Iterator<Item = Result<char, utf8_read::Error>>,{
         let mut buff = String::new();
         let mut letter = first_char;
         loop {
@@ -180,7 +183,7 @@ impl Lexer {
             }
             letter = iterator.next().unwrap().unwrap();
         }
-        if let Some(token_type) = self.keywords.get(&buff) {
+        if let Some(token_type) = keywords.get(&buff) {
             Token::new(token_type.clone(), buff)
         } else {
             Token::new(TokenType::Variable, buff)
@@ -223,8 +226,6 @@ mod lexer_tests {
         let token = Lexer::parse_string(&mut iterator);
         assert_eq!(token.token_type(), TokenType::String);
         assert_eq!(token.val(), "world1234");
-
-        // Add more test cases for edge cases, invalid inputs, etc.
     }
 
     #[test]
@@ -232,26 +233,22 @@ mod lexer_tests {
         let mut iterator = "foo123".chars().map(|x|Ok(x)).into_iter().peekable();
         let mut keywords: HashMap<String, TokenType> = HashMap::new();
         keywords.insert("if".to_string(), TokenType::Keyword);
-        let lex = Lexer::new_keywords(keywords);
 
-        let token = lex.parse_name(iterator.next().unwrap().unwrap(), &mut iterator);
+        let token = Lexer::parse_name(iterator.next().unwrap().unwrap(), &mut iterator, &keywords);
         assert_eq!(token.token_type(), TokenType::Variable);
         assert_eq!(token.val(), "foo123");
 
         let mut iterator = "if".chars().map(|x|Ok(x)).into_iter().peekable();
-        let token = lex.parse_name(iterator.next().unwrap().unwrap(), &mut iterator);
+        let token = Lexer::parse_name(iterator.next().unwrap().unwrap(), &mut iterator, &keywords);
         assert_eq!(token.token_type(), TokenType::Keyword);
         assert_eq!(token.val(), "if");
-
-        // Add more test cases for edge cases, invalid inputs, etc.
     }
     
     #[test]
     fn test_parse_string_lexing() {
         let mut iterator = "\"gay\" \"\" \" not gonna sugarcoat it \"".chars().map(|x|Ok(x)).into_iter().peekable();
         let mut buffer = Vec::new();
-        let lexer = Lexer::new();
-        while let Some(x) = lexer.get_next_token(&mut iterator) {
+        while let Some(x) = Lexer::get_next_token(&mut iterator,&HashMap::new()) {
             buffer.push(x);
         }
         assert_eq!(buffer[0].token_type(),TokenType::String);
@@ -260,7 +257,6 @@ mod lexer_tests {
         assert_eq!(buffer[1].val(),"");
         assert_eq!(buffer[2].token_type(),TokenType::String);
         assert_eq!(buffer[2].val()," not gonna sugarcoat it ");
-        // Add more test cases for edge cases, invalid inputs, etc.
     }
 
     #[test]
@@ -275,7 +271,10 @@ mod lexer_tests {
         assert_eq!(token.token_type(), TokenType::Number);
         assert_eq!(token.val(), "0xABC");
 
-        // Add more test cases for edge cases, invalid inputs, etc.
+        let mut iterator = "0".chars().map(|x|Ok(x)).into_iter().peekable();
+        let token = Lexer::parse_number(iterator.next().unwrap().unwrap(), &mut iterator);
+        assert_eq!(token.token_type(), TokenType::Number);
+        assert_eq!(token.val(), "0");
     }
     
     #[test]
@@ -283,8 +282,7 @@ mod lexer_tests {
         
         let mut iterator = "1 + b - c".chars().map(|x|Ok(x)).into_iter().peekable();
         let mut buffer = Vec::new();
-        let lexer = Lexer::new();
-        while let Some(x) = lexer.get_next_token(&mut iterator) {
+        while let Some(x) = Lexer::get_next_token(&mut iterator,&HashMap::new()) {
             buffer.push(x);
         }
         assert_eq!(buffer[0].token_type(), TokenType::Number);
@@ -297,16 +295,13 @@ mod lexer_tests {
         assert_eq!(buffer[3].val(), "-");
         assert_eq!(buffer[4].token_type(), TokenType::Variable);
         assert_eq!(buffer[4].val(), "c");
-
-        // Add more test cases for edge cases, invalid inputs, etc.
     }
     #[test]
     fn test_lex_simple_expression_extended() {
         
         let mut iterator = "1 + base - con".chars().map(|x|Ok(x)).into_iter().peekable();
         let mut buffer = Vec::new();
-        let lexer = Lexer::new();
-        while let Some(x) = lexer.get_next_token(&mut iterator) {
+        while let Some(x) = Lexer::get_next_token(&mut iterator,&HashMap::new()) {
             buffer.push(x);
         }
         assert_eq!(buffer[0].token_type(), TokenType::Number);
@@ -319,7 +314,29 @@ mod lexer_tests {
         assert_eq!(buffer[3].val(), "-");
         assert_eq!(buffer[4].token_type(), TokenType::Variable);
         assert_eq!(buffer[4].val(), "con");
-
-        // Add more test cases for edge cases, invalid inputs, etc.
+    }
+    #[test]
+    fn test_lex_operators() {
+        
+        let mut iterator = " + - = += /= *= -= %= == != || | && & ^ ".chars().map(|x|Ok(x)).into_iter().peekable();
+        let mut buffer = Vec::new();
+        while let Some(x) = Lexer::get_next_token(&mut iterator,&HashMap::new()) {
+            buffer.push(x);
+        }
+        for x in buffer {
+            assert_eq!(x.token_type(),TokenType::Operator); 
+        }
+    }
+    #[test]
+    fn test_lex_unary_operators() {
+        
+        let mut iterator = " ++ -- ~ !".chars().map(|x|Ok(x)).into_iter().peekable();
+        let mut buffer = Vec::new();
+        while let Some(x) = Lexer::get_next_token(&mut iterator,&HashMap::new()) {
+            buffer.push(x);
+        }
+        for x in buffer {
+            assert_eq!(x.token_type(),TokenType::UnOperator); 
+        }
     }
 }

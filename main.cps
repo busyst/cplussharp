@@ -1,9 +1,7 @@
 /*
- *
  * kernel.c - version 0.0.1
  * https://github.com/chipsetx/Simple-Kernel-in-C-and-Assembly/blob/master/kernel.c
- */
-void k_clear_screen();
+*/
 
 #define WHITE_TXT 0x07 /* light gray on black text */
 

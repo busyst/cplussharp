@@ -9,7 +9,6 @@ pub enum TokenType {
   UnOperator,
   Operator,
   Number,
-  Char,
   String,
   LParen,
   RParen,
@@ -19,6 +18,10 @@ pub enum TokenType {
   RSquareBrace,
   Semicolon,
   Colon,
+
+
+  // Parser token
+  Pointer
 }
 impl PartialEq for TokenType {
     fn eq(&self, other: &Self) -> bool {
@@ -40,7 +43,6 @@ impl fmt::Display for TokenType {
             TokenType::UnOperator => write!(f, "UnOperator"),
             TokenType::Operator => write!(f, "BiOperator"),
             TokenType::Number => write!(f, "Number"),
-            TokenType::Char => write!(f, "Char"),
             TokenType::String => write!(f, "String"),
             TokenType::LParen => write!(f, "Left Paren"),
             TokenType::RParen => write!(f, "Right Paren"),
@@ -50,6 +52,7 @@ impl fmt::Display for TokenType {
             TokenType::RSquareBrace => write!(f, "Right Square Brace"),
             TokenType::Semicolon => write!(f, "Semicolon"),
             TokenType::Colon => write!(f, "Colon"),
+            TokenType::Pointer => write!(f,"Pointer")
         }
     }
 }
@@ -66,7 +69,7 @@ impl Token {
         val,
         }
     }
-    #[allow(dead_code)]
+
     pub fn to_tree_node(&self) -> TreeNode<&Token> {
         TreeNode::new(self)
     }
@@ -83,6 +86,10 @@ impl Token {
 
     pub fn token_type(&self) -> TokenType {
         self.token_type
+    }
+    
+    pub fn set_token_type(&mut self, token_type: TokenType) {
+        self.token_type = token_type;
     }
     
 }
