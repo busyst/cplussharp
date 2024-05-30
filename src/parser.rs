@@ -1,68 +1,339 @@
+use crate::token::TokenType;
+#[derive(Debug, PartialEq, Clone)]
+pub enum ASTNode {
+  // Preprocessor, Name , definition
+  PreDefineConstant(String,Vec<TokenType>),
+  PreDefineExpression(String,Vec<TokenType>),
+  PreDefineExpressionWithParams(String,Vec<TokenType>,Vec<TokenType>),
+  // left, right
+  BitField(Vec<TokenType>,Vec<TokenType>),
+  // label name
+  Label(String),
+  // declaration (before '{'), body
+  StructureDefine(Vec<TokenType>, Vec<ASTNode>),
+  // function and args
+  FunctionCall(Vec<TokenType>),
+  // (-= += = *= ...), left and right parts
+  Operation(TokenType, Vec<TokenType>, Vec<TokenType>),
+  // (++ --), left part
+  UnaryOperation(TokenType, Vec<TokenType>),
+  
+}
 
-use token::Token;
-use tree::TreeNode;
+use std::fmt;
 
-use crate::{token::{self, TokenType}, tree};
+impl fmt::Display for ASTNode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+          ASTNode::PreDefineExpression(_,_) =>{Ok(())}
+          ASTNode::PreDefineExpressionWithParams(_,_,_) =>{Ok(())}
+
+            ASTNode::PreDefineConstant(name, tokens) => {
+                write!(f, "PreDefineMacros({},[", name)?;
+                for token in tokens {
+                    write!(f, "{},", token)?;
+                }
+                write!(f, "])")
+            }
+            ASTNode::BitField(left, right) => {
+                write!(f, "BitField([")?;
+                for token in left {
+                    write!(f, "{},", token)?;
+                }
+                write!(f, "],[")?;
+                for token in right {
+                    write!(f, "{},", token)?;
+                }
+                write!(f, "])")
+            }
+            ASTNode::Label(name) => write!(f, "Label({})", name),
+            ASTNode::StructureDefine(declaration, body) => {
+                write!(f, "StructureDefine([")?;
+                for token in declaration {
+                    write!(f, "{},", token)?;
+                }
+                writeln!(f, "],[")?;
+                for node in body {
+                    writeln!(f, "{},", node)?;
+                }
+                write!(f, "])")
+            }
+            ASTNode::FunctionCall(tokens) => {
+                write!(f, "FunctionCall([")?;
+                for token in tokens {
+                    write!(f, "{}", token)?;
+                }
+                write!(f, "])")
+            }
+            ASTNode::Operation(op, left, right) => {
+                write!(f, "Operation({},[",op)?;
+                for token in left {
+                    write!(f, "{},", token)?;
+                }
+                write!(f, "],[")?;
+                for token in right {
+                    write!(f, "{},", token)?;
+                }
+                write!(f, "])")
+            }
+            ASTNode::UnaryOperation(op, tokens) => {
+                write!(f, "UnaryOperation({},[",op)?;
+                for token in tokens {
+                    write!(f, "{},", token)?;
+                }
+                write!(f, "])")
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Parser {
-    buffer : Vec<Token>,
-    counter : u8,
+  tokens: Vec<TokenType>,
+}
+
+impl Parser {
+  pub fn new(tokens: Vec<TokenType>) -> Self {
+    Self { tokens }
   }
+  pub fn parse(&mut self) -> Vec<ASTNode>{
+    let mut ast = Vec::new();
+
+    let mut i = 0;
+    let mut parens = 0;
+    while let Some(token) = self.tokens.get(i) {
+
+      if let TokenType::Keyword(op) = token{
+        if op == "unsigned"{
+          if let TokenType::Keyword(sop) = self.tokens.get_mut(i+1).unwrap(){
+            sop.insert(0, 'u');
+          }
+          self.tokens.remove(i);
+        }
+      }
+      else if let TokenType::Operator(op) = token{
+        let mut left = Vec::new();
+        if op ==  "("{
+          parens+=1;
+        }
+        else if op ==  ")"{
+          parens-=1;
+        }
+        if parens!=0{
+          i+=1;
+          continue;
+        }
+        if op.ends_with('='){ // definetly assigment a = ...; or creation uint a = ...; 
+          for _ in 0..i {
+            left.push(self.tokens.remove(0));
+          }
+          let operation = self.tokens.remove(0);
+          let right = self.capture_until_semicolon();
+          ast.push(ASTNode::Operation(operation, left, right));
+          i = 0;
+          continue;
+        }
+        else if op == ";" { // probably funcion call a(); or single operator r.a++; or return a; or int a;'
+          for _ in 0..i {
+            left.push(self.tokens.remove(0));
+          }
+          self.tokens.remove(0);
+          if let Some(TokenType::Operator(x)) = left.last(){
+            if x == "++" || x == "--"{
+              ast.push(ASTNode::UnaryOperation(left.remove(left.len()-1),left));
+              i = 0;
+              continue;
+            }
+          }
+          ast.push(ASTNode::FunctionCall(left));
+          i = 0;
+          continue;
+        }
+        else if op == "{" {
+          for _ in 0..i {
+            left.push(self.tokens.remove(0));
+          }
+          self.tokens.remove(0); // remove {
+          let body = self.capture_in_curly();
+
+          if let Some(TokenType::Operator(x)) = self.tokens.first() {
+            if x == ";"{
+              self.tokens.remove(0);
+            }
+          }
+          ast.push(ASTNode::StructureDefine(left, Parser::new(body).parse()));
+          i = 0;
+          continue;
+        }
+        else if op == ":" { // unsigned int wr:1; or label:
+          for _ in 0..i {
+            left.push(self.tokens.remove(0));
+          }
+          self.tokens.remove(0); // remove ':'
+          if let Some(TokenType::Number(_)) = self.tokens.first(){
+            let mut right = Vec::new();
+            loop {
+              if let Some(TokenType::Operator(o)) = self.tokens.first(){
+                if o == ";" {
+                  self.tokens.remove(0);
+                  break;
+                }
+              }
+              right.push(self.tokens.remove(0));
+            }
+            ast.push(ASTNode::BitField(left,right));
+            i = 0;
+            continue;
+        }
+          // must be label
+          if let Some(TokenType::Identifier(x)) = left.first(){
+            ast.push(ASTNode::Label(x.clone()));
+          }
+
+          i = 0;
+          continue;
+        }
+      }
+      else if let TokenType::Preprocessor = token {
+        if let Some(TokenType::Identifier(x)) = self.tokens.get(1){
+          if x == "define"{
+            if let Some(TokenType::Identifier(name)) = self.tokens.get(2){
+              if let Some(q) = self.tokens.get(3){
+                if let TokenType::Number(_) = q{
+                  let mut b = vec![];
+                  b.push(self.tokens.get(3).unwrap().clone());
+                  ast.push(ASTNode::PreDefineConstant(name.clone(), b));
+                  self.tokens.drain(0..4);
+                }
+                else if let TokenType::Operator(r) = q {
+                    if r == "(" {
+                      let name = name.clone();
+                      self.tokens.drain(0..4);
+                      let args_or_expression = self.capture_in_paren();
+                      if let Some(TokenType::Operator(_)) = self.tokens.first(){
+                        self.tokens.remove(0);
+                        let expresion = self.capture_in_paren();
+                        ast.push(ASTNode::PreDefineExpressionWithParams(name,args_or_expression, expresion));
+                        i = 0;
+                        continue;
+                      }
+                      ast.push(ASTNode::PreDefineExpression(name,args_or_expression));
+                      i = 0;
+                      continue;
+                    }
+                }
+              }
+            }
+          }else {
+            todo!("Unexpected preprocessor directive {}",x);
+          }
+        }
+        self.tokens.remove(0);
+      }
+      i+=1;
+    }
+    return ast;
+
+  }
+  fn capture_in_paren(&mut self) -> Vec<TokenType> {
+    let mut braces = 1;
+    let mut body = Vec::new();
+    loop {
+      if let Some(x) = self.tokens.first(){
+        if let TokenType::Operator(op) = x{
+          if op == "(" {
+            braces+=1;
+          }
+          else if op == ")"{
+            braces-=1;
+            if braces == 0{
+              self.tokens.remove(0); // Remove }
+              return body;
+            }
+          }
+        }
+        body.push(self.tokens.remove(0));
+        continue;
+      }
+      panic!("Missmached parens!");
+    }
+  }
+  fn capture_until_semicolon(&mut self) -> Vec<TokenType> {
+    let mut body = Vec::new();
+    loop {
+      if let Some(x) = self.tokens.first(){
+        if let TokenType::Operator(op) = x{
+          if op == ";" {
+            self.tokens.remove(0);
+            return  body;
+          }
+        }
+        body.push(self.tokens.remove(0));
+        continue;
+      }
+      panic!("Expected simicolon!");
+    }
+
+  }
+  fn capture_in_curly(&mut self) -> Vec<TokenType> {
+    let mut braces = 1;
+    let mut body = Vec::new();
+    loop {
+      if let Some(x) = self.tokens.first(){
+        if let TokenType::Operator(op) = x{
+          if op == "{" {
+            braces+=1;
+          }
+          else if op == "}"{
+            braces-=1;
+            if braces == 0{
+              self.tokens.remove(0); // Remove }
+              return body;
+            }
+          }
+        }
+        body.push(self.tokens.remove(0));
+        continue;
+      }
+      panic!("Missmached curly braces!");
+    }
+  }
+}
+
+/*
+#[cfg(test)]
+mod parser_tests;
+
+
+
+
+
+
+pub struct Parser {
+}
   
 impl Parser {
-    pub fn new() -> Self {
-        let buffer: Vec<Token> = Vec::new();
-        
-        Self {
-        buffer,
-        counter: 0,
-        }
-    }
-    pub fn add_to_buffer(&mut self, token: Token) {
-      self.buffer.push(token);
-    }
-    
-    pub fn update(&mut self) {
-      let l: &Token = self.buffer.last().unwrap();  
-      if matches!(l.token_type(),TokenType::LBrace){
-        self.counter += 1;
-        return;
-      }
-      if matches!(l.token_type(),TokenType::RBrace){
-        if self.counter == 0{
-          panic!("Mismatched parentheses, update type!")
-        }
-        self.counter -= 1;
-        if self.counter==0{
-          self.hit();
-        }
-        return;
-      }
-      if(matches!(l.token_type(),TokenType::Semicolon)&&self.counter==0){
-        self.hit();
-        return;
-      }
-    }
-    pub fn hit(&mut self){
-      self.preprocess();
+    pub fn hit(buffer : &mut Vec<Token>){
+      Parser::preprocess(buffer);
   
-      self.rpn_buffer();
+      Parser::rpn_buffer(buffer);
     }
 
-    pub fn hit_tree(&mut self,root: &mut TreeNode<Token>){
-      self.preprocess();
+    pub fn hit_tree(buffer : &mut Vec<Token>,root: &mut TreeNode<Token>){
+      Parser::preprocess(buffer);
   
-      self.rpn_buffer();
-      self.make_tree(root);
-      for x in &self.buffer {
+      Parser::rpn_buffer(buffer);
+      Parser::make_tree(buffer, root);
+      for x in buffer {
         print!("{}", x);
       }
       println!();
-      self.buffer.clear();
+      //buffer.clear();
     }
-    fn preprocess(&mut self) {
+    fn preprocess(buffer : &mut Vec<Token>) {
       let mut i: usize = 0;
-      let mut l: usize = self.buffer.len();
-      let buffer_mut = &mut self.buffer;
+      let mut l: usize = buffer.len();
+      let buffer_mut = buffer;
   
       while i < l {
         let a = buffer_mut.get(i).unwrap();
@@ -121,12 +392,12 @@ impl Parser {
     }
   
   
-    fn make_tree(&mut self,root: &mut TreeNode<Token>) {
-      if self.buffer.len() == 0 {
+    fn make_tree(buffer : &mut Vec<Token>,root: &mut TreeNode<Token>) {
+      if buffer.len() == 0 {
         panic!("Tree with length 0?")
       }
       
-      let last_token = self.buffer.pop().unwrap();
+      let last_token = buffer.pop().unwrap();
       let root_a = last_token.to_tree_node_clone();
       root.set_val((*root_a.val()).clone());
 
@@ -152,7 +423,7 @@ impl Parser {
           }
         }
       }
-      rec(&mut self.buffer,root);
+      rec(buffer,root);
       
       println!("------>");
       println!("{}",root);
@@ -160,11 +431,11 @@ impl Parser {
     }
 
     /// Reverse prefix! Not postfix, and not prefix
-    fn rpn_buffer(&mut self) {
+    fn rpn_buffer(buffer : &mut Vec<Token>) {
       let mut output: Vec<Token> = Vec::new();
       let mut stack: Vec<Token> = Vec::new();
-      while !self.buffer.is_empty() {
-        let e = self.buffer.remove(0);
+      while !buffer.is_empty() {
+        let e = buffer.remove(0);
         match e.token_type() {
           TokenType::Keyword | TokenType::LParen | TokenType::LBrace | TokenType::LSquareBrace => stack.push(e),
           TokenType::RParen | TokenType::RBrace | TokenType::RSquareBrace => {
@@ -204,7 +475,7 @@ impl Parser {
           }
           stack.push(e);
         },
-        TokenType::Variable | TokenType::Number | TokenType::String | TokenType::Pointer  =>{
+        TokenType::Variable | TokenType::Number | TokenType::String  =>{
           output.push(e);
         }
         TokenType::Semicolon =>{}
@@ -217,7 +488,8 @@ impl Parser {
       }
       output.push(top);
     }
-      self.buffer = output;
+    buffer.clear();
+    buffer.append(&mut output);
     }
   
   
@@ -255,183 +527,4 @@ impl Parser {
   
 }
 
-
-#[cfg(test)]
-mod parser_tests {
-    use std::collections::HashMap;
-
-    use crate::{lexer::Lexer, token::TokenType};
-
-    use super::*;
-    #[test]
-    fn test_parse_tree_simple_expression() {
-      let mut iterator = "(1-2) + b * c".chars().map(|x|Ok(x)).into_iter().peekable();
-      let mut parser = Parser::new();
-      while let Some(x) = Lexer::get_next_token(&mut iterator,&HashMap::new()) {
-        parser.add_to_buffer(x);
-      }
-      let mut root = TreeNode::new(Token::new(TokenType::Semicolon, String::new()));
-      parser.hit_tree(&mut root);
-
-      rec(&mut root);
-      fn rec(parent: &mut TreeNode<Token>){
-        let childrens: &mut Vec<TreeNode<Token>> = parent.children_mut();
-        for child in childrens {
-          if (*child).val().token_type() == TokenType::Operator{
-            rec(child);
-            (*child).set_val(Token::new(TokenType::Variable, "eax".to_string()));
-          }
-        }
-        let mut a = String::new();
-        for child in parent.children_mut() {
-          a.push_str(child.val().val());
-          a.push(' ');
-        }
-        a.push_str(parent.val().val());
-        
-
-        //println!("{}",a);
-      }
-      // Add more test cases for edge cases, invalid inputs, etc.
-    }
-    
-    #[test]
-    fn test_parse_simple_expression() {
-      let mut iterator = "(1-2) + b * c".chars().map(|x|Ok(x)).into_iter().peekable();
-      let mut parser = Parser::new();
-      while let Some(x) = Lexer::get_next_token(&mut iterator,&HashMap::new()) {
-        parser.add_to_buffer(x);
-      }
-      parser.hit();
-      let buffer = parser.buffer;
-      assert_eq!(buffer[0].token_type(), TokenType::Number);
-      assert_eq!(buffer[0].val(), "1");
-      assert_eq!(buffer[1].token_type(), TokenType::Number);
-      assert_eq!(buffer[1].val(), "2");
-      assert_eq!(buffer[2].token_type(), TokenType::Operator);
-      assert_eq!(buffer[2].val(), "-");
-      assert_eq!(buffer[3].token_type(), TokenType::Variable);
-      assert_eq!(buffer[3].val(), "b");
-      assert_eq!(buffer[4].token_type(), TokenType::Variable);
-      assert_eq!(buffer[4].val(), "c");
-      assert_eq!(buffer[5].token_type(), TokenType::Operator);
-      assert_eq!(buffer[5].val(), "*");
-      assert_eq!(buffer[6].token_type(), TokenType::Operator);
-      assert_eq!(buffer[6].val(), "+");
-      // Add more test cases for edge cases, invalid inputs, etc.
-    }
-    #[test]
-    fn test_parse_simple_expression_with_function() {
-      let mut iterator = "a * pow(1,a) + b".chars().map(|x|Ok(x)).into_iter().peekable();
-      let mut parser = Parser::new();
-      while let Some(x) = Lexer::get_next_token(&mut iterator,&HashMap::new()) {
-        parser.add_to_buffer(x);
-      }
-      parser.hit();
-      let buffer =  parser.buffer;
-      assert_eq!(buffer[0].token_type(), TokenType::Variable);
-      assert_eq!(buffer[0].val(), "a");
-      assert_eq!(buffer[1].token_type(), TokenType::Number);
-      assert_eq!(buffer[1].val(), "1");
-      assert_eq!(buffer[2].token_type(), TokenType::Variable);
-      assert_eq!(buffer[2].val(), "a");
-      assert_eq!(buffer[3].token_type(), TokenType::Operator);
-      assert_eq!(buffer[3].val(), ",");
-      assert_eq!(buffer[4].token_type(), TokenType::Keyword);
-      assert_eq!(buffer[4].val(), "pow");
-      assert_eq!(buffer[5].token_type(), TokenType::Operator);
-      assert_eq!(buffer[5].val(), "*");
-      assert_eq!(buffer[6].token_type(), TokenType::Variable);
-      assert_eq!(buffer[6].val(), "b");
-      assert_eq!(buffer[7].token_type(), TokenType::Operator);
-      assert_eq!(buffer[7].val(), "+");
-      // Add more test cases for edge cases, invalid inputs, etc.
-    }
-    #[test]
-    fn test_parse_tree_simple_expression_with_function() {
-      let mut iterator = "3 + pow(1) + b * c".chars().map(|x|Ok(x)).into_iter().peekable();
-      let mut parser = Parser::new();
-      while let Some(x) = Lexer::get_next_token(&mut iterator,&HashMap::new()) {
-        parser.add_to_buffer(x);
-      }
-      let mut root = TreeNode::new(Token::new(TokenType::Semicolon, String::new()));
-      parser.hit_tree(&mut root);
-
-      rec(&mut root);
-      fn rec(parent: &mut TreeNode<Token>){
-        let childrens: &mut Vec<TreeNode<Token>> = parent.children_mut();
-        for child in childrens {
-          if (*child).val().token_type() == TokenType::Operator{
-            rec(child);
-            (*child).set_val(Token::new(TokenType::Variable, "eax".to_string()));
-          }
-        }
-        let mut a = String::new();
-        for child in parent.children_mut() {
-          a.push_str(child.val().val());
-          a.push(' ');
-        }
-        a.push_str(parent.val().val());
-        
-
-        //println!("{}",a);
-      }
-      // Add more test cases for edge cases, invalid inputs, etc.
-    }
-    #[test]
-    fn test_parse_c_function_declaration() {
-      let mut iterator1 = "int *(*pointer) = 0".chars().map(|x| Ok(x)).into_iter().peekable();
-      let mut iterator2 = "(int*)* pointer = 0".chars().map(|x| Ok(x)).into_iter().peekable();
-      let mut iterator3 = "int** pointer = 0".chars().map(|x| Ok(x)).into_iter().peekable();
-      let mut parser1 = Parser::new();
-      let mut parser2 = Parser::new();
-      let mut parser3 = Parser::new();
-
-      let mut keywords: HashMap<String, TokenType> = HashMap::new();
-      keywords.insert("if".to_string(), TokenType::Keyword);
-      keywords.insert("return".to_string(), TokenType::Keyword);
-      keywords.insert("unsigned".to_string(), TokenType::Keyword);
-      keywords.insert("void".to_string(), TokenType::Keyword);
-      keywords.insert("#define".to_string(), TokenType::Keyword);
-      keywords.insert("ulong".to_string(), TokenType::Keyword);
-      keywords.insert("long".to_string(), TokenType::Keyword);
-      keywords.insert("uint".to_string(), TokenType::Keyword);
-      keywords.insert("int".to_string(), TokenType::Keyword);
-      keywords.insert("ushort".to_string(), TokenType::Keyword);
-      keywords.insert("short".to_string(), TokenType::Keyword);
-      keywords.insert("byte".to_string(), TokenType::Keyword);
-      keywords.insert("char".to_string(), TokenType::Keyword);
-      
-      
-      while let Some(x) = Lexer::get_next_token(&mut iterator1,&keywords) {
-          parser1.add_to_buffer(x);
-      }
-  
-      while let Some(x) = Lexer::get_next_token(&mut iterator2,&keywords) {
-          parser2.add_to_buffer(x);
-      }
-  
-      while let Some(x) = Lexer::get_next_token(&mut iterator3,&keywords) {
-          parser3.add_to_buffer(x);
-      }
-      parser1.hit();
-      parser2.hit();
-      parser2.preprocess();
-      parser3.hit();
-  
-      println!("");
-  }
-  #[test]
-  fn test_parse_simple_function() {
-    let mut iterator = "int a = 0; ".chars().map(|x|Ok(x)).into_iter().peekable();
-    let mut parser = Parser::new();
-    let mut keywords: HashMap<String, TokenType> = HashMap::new();
-    keywords.insert("int".to_string(), TokenType::Keyword);
-    while let Some(x) = Lexer::get_next_token(&mut iterator,&keywords) {
-      parser.add_to_buffer(x);
-    }
-    parser.hit();
-    // Add more test cases for edge cases, invalid inputs, etc.
-  }
-  
-}
+ */
