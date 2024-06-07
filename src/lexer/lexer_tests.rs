@@ -39,16 +39,21 @@ fn test_parse_string_lexing() {
 #[test]
 fn test_parse_number() {
     let mut iterator = "123".chars().map(|x| Ok(x)).into_iter().peekable();
-    let token = Lexer::parse_number(iterator.next().unwrap().unwrap(), &mut iterator);
+    let kw = HashMap::new();
+    let token = Lexer::get_next_token(&mut iterator, &kw).unwrap();
     assert_eq!(token, TokenType::Number("123".to_string()));
 
     let mut iterator = "0xABC".chars().map(|x| Ok(x)).into_iter().peekable();
-    let token = Lexer::parse_number(iterator.next().unwrap().unwrap(), &mut iterator);
+    let token = Lexer::get_next_token(&mut iterator, &kw).unwrap();
     assert_eq!(token, TokenType::Number("0xABC".to_string()));
 
     let mut iterator = "0".chars().map(|x| Ok(x)).into_iter().peekable();
-    let token = Lexer::parse_number(iterator.next().unwrap().unwrap(), &mut iterator);
+    let token = Lexer::get_next_token(&mut iterator, &kw).unwrap();
     assert_eq!(token, TokenType::Number("0".to_string()));
+
+    let mut iterator = "-8".chars().map(|x| Ok(x)).into_iter().peekable();
+    let token = Lexer::get_next_token(&mut iterator, &kw).unwrap();
+    assert_eq!(token, TokenType::Number("-8".to_string()));
 }
 
 #[test]

@@ -1,5 +1,5 @@
 use std::{collections::HashMap, iter::Peekable};
-use crate::token::{TokenType};
+use crate::token::TokenType;
 #[cfg(test)]
 mod lexer_tests;
 
@@ -30,6 +30,9 @@ impl Lexer {
                         a.push(p);
                         iterator.next();
                         return Some(TokenType::Operator(a))
+                    }
+                    else if ch == '-'&& p.is_digit(10) {
+                        return Some(Lexer::parse_number(ch, iterator));
                     }
                     return Some(TokenType::Operator(ch.to_string()))
                 }
@@ -92,9 +95,20 @@ impl Lexer {
                         let c = buff.pop().unwrap();
                         match c {
                             'n' => return Some(TokenType::Number(10.to_string())),
+                            't' => return Some(TokenType::Number(9.to_string())),
+                            'b' => return Some(TokenType::Number(8.to_string())),
+                            'r' => return Some(TokenType::Number(13.to_string())),
+                            'a' => return Some(TokenType::Number(7.to_string())),
+                            '\'' => return Some(TokenType::Number(39.to_string())),
+                            '"' => return Some(TokenType::Number(34.to_string())),
+                            '\\' => return Some(TokenType::Number(92.to_string())),
+                            'f' => return Some(TokenType::Number(12.to_string())),
+                            'v' => return Some(TokenType::Number(11.to_string())),
+                            '0' => return Some(TokenType::Number(0.to_string())),
                             _ => panic!("Wrong escape sequence!"),
                         }
                     }
+                    todo!("Unimplemented escape sequence");
                 }
                 _ => {
                     // Handle numbers and identifiers

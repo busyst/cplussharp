@@ -1,16 +1,15 @@
 mod tree;
 mod lexer;
-mod token;
 mod parser;
-
+mod token;
+use parser::Parser;
 use utf8_read::Reader;
 use std::fs::File;
 use std::collections::HashMap;
 use crate::lexer::Lexer;
-use crate::parser::Parser;
 use crate::token::TokenType;
 
-// Goal for now, implement C language.
+// Goal for now, implement language.
 
 fn main() {
   let filename = "main.cps".to_string();
@@ -26,7 +25,7 @@ fn main() {
   keywords.insert("for".to_string(), TokenType::Keyword("for".to_string()));
   keywords.insert("do".to_string(), TokenType::Keyword("do".to_string()));
   keywords.insert("continue".to_string(), TokenType::Keyword("continue".to_string()));
-  keywords.insert("break;".to_string(), TokenType::Keyword("break".to_string()));
+  keywords.insert("break".to_string(), TokenType::Keyword("break".to_string()));
   keywords.insert("return".to_string(), TokenType::Keyword("return".to_string()));
   keywords.insert("goto".to_string(), TokenType::Keyword("goto".to_string()));
   // Structs
@@ -98,9 +97,6 @@ fn main() {
   }
   let mut parser = Parser::new(buffer);
   let mut instructions = parser.parse();
-  for x in &instructions {
-      println!("{}",x);
-  }
   /*
   
   

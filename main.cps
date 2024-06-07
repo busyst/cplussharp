@@ -1,129 +1,60 @@
-// Macros
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-#define SWAP(a, b) (a ^= b ^= a ^= b)
-
-// Structure and union
-struct Student {
-    char name[50];
-    int age;
-    float gpa;
+/*
+ *
+ * kernel.c - version 0.0.1
+ * https://github.com/chipsetx/Simple-Kernel-in-C-and-Assembly/blob/master/kernel.c
+ */
+#define WHITE_TXT 0x07 /* light gray on black text */
+/* simple kernel written in C */
+void k_main() 
+{
+	k_clear_screen();
+	k_printf("Hello, world! Welcome to my kernel.", 0);
 };
 
-union Value {
-    int intValue;
-    float floatValue;
-    char charValue;
+/* k_clear_screen : to clear the entire text screen */
+void k_clear_screen()
+{
+	char *vidmem = (char *) 0xb8000;
+	unsigned int i=0;
+	while(i < (80*25*2))
+	{
+		vidmem[i]=' ';
+		i++;
+		vidmem[i]=WHITE_TXT;
+		i++;
+	};
 };
 
-// Function prototypes
-void printArray(int arr[], int size);
-int findMax(int arr[], int size);
-void bubbleSort(int arr[], int size);
-int isEven(int num);
-int isOdd(int num);
-int isPrime(int num);
-int fibonacci(int n);
+/* k_printf : the message and the line # */
+unsigned int k_printf(char *message, unsigned int line)
+{
+	char *vidmem = (char *) 0xb8000;
+	unsigned int i=0;
+	i=(line*80*2);
 
-int main() {
-    // Arrays
-    int numbers[] = {5, 2, 8, 1, 9};
-    int size = sizeof(numbers) / sizeof(numbers[0]);
+	while(*message!=0)
+	{
+		if(*message=='\n') // check for a new line
+		{
+			line++;
+			i=(line*80*2);
+			*message++;
+		} else {
+			vidmem[i]=*message;
+			*message++;
+			i++;
+			vidmem[i]=WHITE_TXT;
+			i++;
+		};
 
-    // Pointers
-    int *ptr = numbers;
-    printf("First element: %d\n", *ptr);
-    printf("Second element: %d\n", *(ptr + 1));
+	};
 
-    // Structure
-    struct Student student = {"John Doe", 20, 3.8};
-    printf("Student name: %s\n", student.name);
-    printf("Student age: %d\n", student.age);
-    printf("Student GPA: %.2f\n", student.gpa);
-
-    // Union
-    union Value value;
-    value.intValue = 42;
-    printf("Value (int): %d\n", value.intValue);
-    value.floatValue = 3.14;
-    printf("Value (float): %.2f\n", value.floatValue);
-    value.charValue = 'A';
-    printf("Value (char): %c\n", value.charValue);
-
-    // Function calls
-    printf("Unsorted array: ");
-    printArray(numbers, size);
-    bubbleSort(numbers, size);
-    printf("Sorted array: ");
-    printArray(numbers, size);
-    printf("Maximum value: %d\n", findMax(numbers, size));
-
-    // Control structures
-    int num = 15;
-    printf("%d is %s\n", num, isEven(num) ? "even" : "odd");
-    printf("%d is %s\n", num, isPrime(num) ? "prime" : "composite");
-
-    // Recursion
-    int n = 10;
-    printf("Fibonacci of %d: %d\n", n, fibonacci(n));
-
-    return 0;
+	return(1);
 }
-
-void printArray(int arr[], int size) {
-    printf("[");
-    for (int i = 0; i < size; i++) {
-        printf("%d", arr[i]);
-        if (i != size - 1) {
-            printf(", ");
-        }
+/* k_strcpy : copy a string */
+void k_strcpy(char *dest, char *src) {
+    while (*src != '\0') {
+        *dest++ = *src++;
     }
-    printf("]\n");
-}
-
-int findMax(int arr[], int size) {
-    int max = arr[0];
-    for (int i = 1; i < size; i++) {
-        if (arr[i] > max) {
-            max = arr[i];
-        }
-    }
-    return max;
-}
-
-void bubbleSort(int arr[], int size) {
-    for (int i = 0; i < size - 1; i++) {
-        for (int j = 0; j < size - i - 1; j++) {
-            if (arr[j] > arr[j + 1]) {
-                SWAP(arr[j], arr[j + 1]);
-            }
-        }
-    }
-}
-
-int isEven(int num) {
-    return num % 2 == 0;
-}
-
-int isOdd(int num) {
-    return num % 2 != 0;
-}
-
-int isPrime(int num) {
-    if (num <= 1) {
-        return 0;
-    }
-    for (int i = 2; i <= sqrt(num); i++) {
-        if (num % i == 0) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-int fibonacci(int n) {
-    if (n <= 1) {
-        return n;
-    }
-    return fibonacci(n - 1) + fibonacci(n - 2);
+    *dest = '\0';
 }
